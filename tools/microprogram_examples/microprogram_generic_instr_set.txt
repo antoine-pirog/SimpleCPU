@@ -1,0 +1,68 @@
+----@|addr+|J|ALU|--WL-|-B
+# main
+00000|   +1|0|000|00010|00 # Fetch MBR (MBR <= Program memory)
+00001|   +1|0|101|00000|10 # Increment PC (Bus_C <= PC + 1)
+00010|   +1|0|101|00001|10 # Store PC (PC <= Bus_C)
+00011|00000|1|000|00000|00 # Goto MBR
+
+# NOP (no operation)
+00100|00000|0|000|00000|00 # Goto main
+
+# INPUT (A <= INPUT)
+00101|   +1|0|001|00000|11 # Fetch input
+00110|   +1|0|001|10000|11 # Store in A
+00111|00000|0|000|00000|00 # Goto main
+
+# OUTPUT (OUTPUT <= A)
+01000|   +1|0|000|00000|00 # Fetch A
+01001|   +1|0|000|00100|00 # Store in OUT
+01010|00000|0|000|00000|00 # Goto main
+
+# JMP <addr>
+01011|   +1|0|001|00010|01 # Load value in MBR and set Bus_C <= MBR
+01100|   +1|0|001|00001|01 # PC <= Bus_C
+01101|00000|0|000|00000|00 # Goto main
+
+# LDA <value> (A <= <value>)
+01110|   +1|0|001|00010|01 # Fetch MBR
+01111|   +1|0|001|10000|01 # Store in A
+10000|   +1|0|101|00000|10 # Increment PC
+10001|   +1|0|101|00001|10 # Store PC
+10010|00000|0|000|00000|00 # Goto main
+
+# INC A (A <= A + 1)
+10011|   +1|0|100|00000|00 # Bus_C <= A+1
+10100|   +1|0|100|10000|00 # Store in A
+10101|00000|0|000|00000|00 # Goto main
+
+# MOV B,A (B <= A)
+10110|   +1|0|000|00000|00 # Bus_C <= A
+10111|   +1|0|000|01000|00 # B <= Bus_C
+11000|00000|0|000|00000|00 # Goto main
+
+# ADD A,B (A <= A+B)
+11001|   +1|0|110|00000|00 # Bus_C <= A+B
+11010|   +1|0|110|10000|00 # A <= Bus_C
+11011|00000|0|000|00000|00 # Goto main
+
+# SUB A,B (A <= A-B)
+11100|   +1|0|111|00000|00 # Bus_C <= A-B
+11101|   +1|0|111|10000|00 # A <= Bus_C
+11110|00000|0|000|00000|00 # Goto main
+
+# HALT
+11111|11111|1|000|00000|00 # Infinite loop
+
+# Instruction : opcode
+# main        : 0x00
+# NOP         : 0x04
+# INPUT       : 0x05
+# OUTPUT      : 0x08
+# JMP         : 0x0B
+# LDA         : 0x0E
+# INC         : 0x13
+# MOV         : 0x16
+# ADD         : 0x19
+# HALT        : 0x1F
+
+# 

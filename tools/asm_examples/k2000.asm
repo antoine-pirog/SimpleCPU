@@ -1,0 +1,57 @@
+LDA 0x01 # -------*
+OUTPUT
+NOP
+NOP
+NOP
+NOP
+
+LDA 0x02 # ------*-
+OUTPUT
+NOP
+NOP
+NOP
+NOP
+
+LDA 0x04  # -----*--
+OUTPUT
+NOP
+NOP
+NOP
+NOP
+
+LDA 0x08 # ----*---
+OUTPUT
+NOP
+NOP
+NOP
+NOP
+
+LDA 0x10 # ---*----
+OUTPUT
+NOP
+NOP
+NOP
+NOP
+
+LDA 0x20 # --*-----
+OUTPUT
+NOP
+NOP
+NOP
+NOP
+
+LDA 0x40 # -*------
+OUTPUT
+NOP
+NOP
+NOP
+NOP
+
+LDA 0x80 # *-------
+OUTPUT
+NOP
+NOP
+NOP
+NOP
+
+JMP 0 # Repeat

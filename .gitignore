@@ -1,0 +1,43 @@
+# Quartus files
+*.qpf
+*.qsf
+*.qws
+*.bak
+*.cdf
+*.sopc_builder
+
+# Simulation files
+simulation/
+*.vcd
+*.wdb
+
+# Synthesis and place & route
+db/
+incremental_db/
+output_files/
+
+# EDA tools
+eda/
+
+# Timing and power analysis
+*.rpt
+*.summary
+
+# Backup files
+*.bak~
+*.backup
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Drawio files
+*.drawio
+
+# User-specific settings
+*.qws
