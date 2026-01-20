@@ -1,0 +1,3 @@
+[submodule "tools/uartcraft"]
+	path = tools/uartcraft
+	url = https://github.com/antoine-pirog/uartcraft.git
