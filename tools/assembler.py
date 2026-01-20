@@ -126,3 +126,15 @@ if __name__ == "__main__":
         with open(args.output_file, "w") as f:
             for byte in machine_code_raw:
                 f.write(f"0x{byte:02X}\n")
+    elif args.format == "mif":
+        with open(args.output_file, "w") as f:
+            f.write("WIDTH=8;\n")
+            f.write("DEPTH=256;\n")
+            f.write("\n")
+            f.write("ADDRESS_RADIX=HEX;\n")
+            f.write("DATA_RADIX=HEX;\n")
+            f.write("\n")
+            f.write("CONTENT BEGIN\n")
+            for i,byte in enumerate(machine_code_raw):
+                f.write(f"  {i:02X} : {byte:02X};\n")
+            f.write("END;")

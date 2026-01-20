@@ -20,4 +20,11 @@ package state_pkg is
         halt,
         other
     );
+
+    type reprogrammer_stage is(
+        reset,
+        idle,
+        initiate,
+        reprogram
+    );
 end package state_pkg;

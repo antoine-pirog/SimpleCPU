@@ -68,10 +68,12 @@ architecture behavioral of toplevel is
     signal uart_rx_data_ready : std_logic := '0';
     signal uart_tx_data       : std_logic_vector(7 downto 0) := (others => '0');
     signal uart_tx_start      : std_logic := '0';
-    signal reprogramming_counter : integer range 0 to 256 := 256; -- 256 means idle mode ; [0-255] means reprogramming at corresponding address
+    signal reprogram_counter : integer range 0 to 256 := 256; -- 256 means idle mode ; [0-255] means reprogramming at corresponding address
+    signal reprogram_state       : reprogrammer_stage := idle;
     signal reprogram_enable      : std_logic := '0';
     signal reprogram_clk         : std_logic := '0';
     signal reprogram_data        : std_logic_vector(7 downto 0) := (others => '0');
+    signal reprogram_address     : std_logic_vector(7 downto 0) := (others => '0');
 
 
 begin
@@ -111,7 +113,7 @@ begin
     clk <= not(KEY(0)) when SW(9) = '0' else clk_auto;
     manual_input <= SW(7 downto 0);
     LEDG <= out_register_bus;
-    LEDR(7 downto 0) <= pc_register_bus;
+    LEDR(7 downto 0) <= pc_register_bus when reprogram_enable = '0' else reprogram_address;
 
     --------------------------------------------------
     -- HEX DISPLAY
@@ -140,6 +142,7 @@ begin
         print_output => out_register_bus,
         -- Reprogramming interface
         reprogram_enable  => reprogram_enable,
+        reprogram_address => reprogram_address,
         reprogram_data_in => reprogram_data,
         reprogram_clk     => reprogram_clk,
         -- CPU monitoring outputs
@@ -180,57 +183,98 @@ begin
     );
 
     -- Reprogramming state machine
-    --   Send 'R' (0x52) via UART to start reprogramming
-    --   Idle when reprogramming_counter = 256
-    --   Reprogram when reprogramming_counter in [0-255]
-    --   A byte is written to program memory at each received UART byte
-    --   After 256 bytes, return to idle
+    --   Send 'R' (0x52) via UART to start reprogramming (CPU is automatically put in reset state)
+    --   Send binary file (256 bytes to fill shared memory)
+    --   When 256 bytes are sent, CPU automatically resumes normal operation
     process(CLOCK_50_B6A, CPU_RESET_n)
     begin
         if CPU_RESET_n = '0' then
-            reprogramming_counter <= 256;
-            reprogram_enable <= '0';
-            reprogram_data <= (others => '0');
+            reprogram_state <= reset;
+            reprogram_counter <= 0;
         else
             if rising_edge(CLOCK_50_B6A) then
-                if reprogramming_counter = 256 then
-                    -- Idle mode, wait for start of reprogramming
-                    if uart_rx_data_ready = '1' and uart_rx_data = x"52" then
-                        -- Command 'R' received: start reprogramming
-                        reprogramming_counter <= 0;
-                        reprogram_enable <= '1';
-                        uart_tx_data <= uart_rx_data; -- Echo back 'R' to acknowledge
-                        uart_tx_start <= '1';
-                    else
-                        uart_tx_start <= '0';
-                    end if;
-                else
-                    -- Reprogramming mode
-                    if uart_rx_data_ready = '1' then
-                        -- Write received byte to program memory
-                        reprogram_data <= uart_rx_data;
-                        reprogram_clk <= '1';
-                        if reprogramming_counter = 255 then
-                            -- Last byte, return to idle
-                            reprogramming_counter <= 256;
-                            reprogram_enable <= '0';
-                            uart_tx_data <= x"2F"; -- Send '/' to indicate end of reprogramming
-                            uart_tx_start <= '1';
-                        else
-                            -- Continue reprogramming
-                            reprogramming_counter <= reprogramming_counter + 1;
-                            uart_tx_data  <= x"2D"; -- Echo '-' to acknowledge byte received
-                            uart_tx_start <= '1';
+                case reprogram_state is
+                    when idle => 
+                        reprogram_counter <= 0;
+                        if uart_rx_data_ready = '1' and uart_rx_data = x"52" then 
+                            reprogram_state <= initiate;
+                        else 
+                            reprogram_state <= idle;
                         end if;
-                    else
-                        -- No data received, clear reprogram clock
-                        reprogram_clk <= '0';
-                        uart_tx_start <= '0';
-                    end if;
-                end if;
+                    when initiate =>
+                        reprogram_counter <= 0;
+                        if uart_rx_data_ready = '1' then
+                            reprogram_state <= reprogram;
+                        else
+                            reprogram_state <= initiate;
+                        end if;
+                    when reprogram =>
+                        if uart_rx_data_ready = '1' then
+                            reprogram_counter <= reprogram_counter + 1;
+                        end if;
+                        if reprogram_counter = 255 then
+                            reprogram_state <= idle;
+                        end if;
+                    when others => 
+                        reprogram_counter <= 0;
+                        reprogram_state <= idle;
+                end case;
             end if;
         end if;
     end process;
+
+    process(CLOCK_50_B6A, CPU_RESET_n)
+    begin
+        if reprogram_state = reset then
+            reprogram_enable <= '0';
+            reprogram_data <= (others => '0');
+            reprogram_clk <= '0';
+        else
+            if rising_edge(CLOCK_50_B6A) then
+                case reprogram_state is
+                    when idle =>
+                        if uart_rx_data_ready = '1' and uart_rx_data = x"52" then 
+                            uart_tx_data  <= x"52"; -- Echo 'R' to acknowledge reprogram request received
+                            uart_tx_start <= '1';
+                        else
+                            uart_tx_start <= '0';
+                        end if;
+                        reprogram_enable <= '0';
+                        reprogram_data <= (others => '0');
+                        reprogram_clk <= '0';
+                    when initiate => 
+                        uart_tx_start <= '0';
+                        reprogram_enable <= '1';
+                        reprogram_data <= (others => '0');
+                        reprogram_clk <= '0';
+                    when reprogram =>
+                        if uart_rx_data_ready = '1' then
+                            reprogram_clk <= '1';
+                            if reprogram_counter = 255 then
+                                uart_tx_data <= x"2F"; -- Send '/' to indicate end of reprogramming
+                                uart_tx_start <= '1';
+                            else
+                                uart_tx_data  <= x"2D"; -- Echo '-' to acknowledge byte received
+                                uart_tx_start <= '1';
+                            end if;
+                        else
+                            reprogram_clk <= '0';
+                            uart_tx_start <= '0';
+                        end if;
+                        reprogram_enable <= '1';
+                        reprogram_data <= uart_rx_data;
+                    when others =>
+                        reprogram_enable <= '0';
+                        reprogram_data <= (others => '0');
+                        reprogram_clk <= '0';
+                        uart_tx_data <= (others => '0');
+                        uart_tx_start <= '0';
+                end case;
+            end if;
+        end if;
+    end process;
+
+    reprogram_address <= std_logic_vector(to_unsigned(reprogram_counter, reprogram_address'length));
 
     LEDR(8) <= reprogram_enable;
 
