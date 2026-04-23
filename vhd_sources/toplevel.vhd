@@ -68,8 +68,6 @@ architecture behavioral of toplevel is
     signal uart_rx_data_ready : std_logic := '0';
     signal uart_tx_data       : std_logic_vector(7 downto 0) := (others => '0');
     signal uart_tx_start      : std_logic := '0';
-    signal reprogram_counter : integer range 0 to 256 := 256; -- 256 means idle mode ; [0-255] means reprogramming at corresponding address
-    signal reprogram_state       : reprogrammer_stage := idle;
     signal reprogram_enable      : std_logic := '0';
     signal reprogram_clk         : std_logic := '0';
     signal reprogram_data        : std_logic_vector(7 downto 0) := (others => '0');
@@ -81,36 +79,27 @@ begin
     -- CLOCK GENERATION
     --------------------------------------------------
 
-    process(CLOCK_50_B6A, rst)
-    begin
-        -- 1 MHz  : 25
-        -- 1 kHz  : 25000
-        -- 100 Hz : 250000
-        -- 10 Hz  : 2500000
-        -- 1 Hz   : 25000000
-        if rst = '1' then
-            clk_counter <= (others => '0');
-            clk_auto <= '0';
-        elsif rising_edge(CLOCK_50_B6A) then
-            if clk_counter >= clk_divider_factor then
-                clk_counter <= (others => '0');
-                clk_auto <= not clk_auto;
-            else
-                clk_counter <= clk_counter + 1;
-            end if;
-        end if;
-    end process;
+    clock_generator : entity work.clock_generator
+    generic map(
+        CLOCK_FREQ => 50000000
+    )
+    port map(
+        auto_clk_in       => CLOCK_50_B6A,
+        manual_clk_in     => not(KEY(0)),
+        rst               => rst,
+        mode_fast_slowN   => SW(8),
+        mode_ultra_slow   => KEY(3),
+        mode_auto_manualN => SW(9),
+        clk_out           => clk
+    );
 
-    clk_divider_factor <= to_unsigned(CPU_CLOCK_DIVIDER_SLOW, 32) when(KEY(3) = '0') else to_unsigned(CPU_CLOCK_DIVIDER_NORMAL, 32) when SW(8) = '0' else to_unsigned(CPU_CLOCK_DIVIDER_FAST, 32);
-
-    LEDR(9) <= clk_auto;
+    LEDR(9) <= clk;
 
     --------------------------------------------------
     -- I/O routing
     --------------------------------------------------
 
     rst <= not(CPU_RESET_n) or reprogram_enable;
-    clk <= not(KEY(0)) when SW(9) = '0' else clk_auto;
     manual_input <= SW(7 downto 0);
     LEDG <= out_register_bus;
     LEDR(7 downto 0) <= pc_register_bus when reprogram_enable = '0' else reprogram_address;
@@ -182,99 +171,19 @@ begin
         tx_busy  => open
     );
 
-    -- Reprogramming state machine
-    --   Send 'R' (0x52) via UART to start reprogramming (CPU is automatically put in reset state)
-    --   Send binary file (256 bytes to fill shared memory)
-    --   When 256 bytes are sent, CPU automatically resumes normal operation
-    process(CLOCK_50_B6A, CPU_RESET_n)
-    begin
-        if CPU_RESET_n = '0' then
-            reprogram_state <= reset;
-            reprogram_counter <= 0;
-        else
-            if rising_edge(CLOCK_50_B6A) then
-                case reprogram_state is
-                    when idle => 
-                        reprogram_counter <= 0;
-                        if uart_rx_data_ready = '1' and uart_rx_data = x"52" then 
-                            reprogram_state <= initiate;
-                        else 
-                            reprogram_state <= idle;
-                        end if;
-                    when initiate =>
-                        reprogram_counter <= 0;
-                        if uart_rx_data_ready = '1' then
-                            reprogram_state <= reprogram;
-                        else
-                            reprogram_state <= initiate;
-                        end if;
-                    when reprogram =>
-                        if uart_rx_data_ready = '1' then
-                            reprogram_counter <= reprogram_counter + 1;
-                        end if;
-                        if reprogram_counter = 255 then
-                            reprogram_state <= idle;
-                        end if;
-                    when others => 
-                        reprogram_counter <= 0;
-                        reprogram_state <= idle;
-                end case;
-            end if;
-        end if;
-    end process;
-
-    process(CLOCK_50_B6A, CPU_RESET_n)
-    begin
-        if reprogram_state = reset then
-            reprogram_enable <= '0';
-            reprogram_data <= (others => '0');
-            reprogram_clk <= '0';
-        else
-            if rising_edge(CLOCK_50_B6A) then
-                case reprogram_state is
-                    when idle =>
-                        if uart_rx_data_ready = '1' and uart_rx_data = x"52" then 
-                            uart_tx_data  <= x"52"; -- Echo 'R' to acknowledge reprogram request received
-                            uart_tx_start <= '1';
-                        else
-                            uart_tx_start <= '0';
-                        end if;
-                        reprogram_enable <= '0';
-                        reprogram_data <= (others => '0');
-                        reprogram_clk <= '0';
-                    when initiate => 
-                        uart_tx_start <= '0';
-                        reprogram_enable <= '1';
-                        reprogram_data <= (others => '0');
-                        reprogram_clk <= '0';
-                    when reprogram =>
-                        if uart_rx_data_ready = '1' then
-                            reprogram_clk <= '1';
-                            if reprogram_counter = 255 then
-                                uart_tx_data <= x"2F"; -- Send '/' to indicate end of reprogramming
-                                uart_tx_start <= '1';
-                            else
-                                uart_tx_data  <= x"2D"; -- Echo '-' to acknowledge byte received
-                                uart_tx_start <= '1';
-                            end if;
-                        else
-                            reprogram_clk <= '0';
-                            uart_tx_start <= '0';
-                        end if;
-                        reprogram_enable <= '1';
-                        reprogram_data <= uart_rx_data;
-                    when others =>
-                        reprogram_enable <= '0';
-                        reprogram_data <= (others => '0');
-                        reprogram_clk <= '0';
-                        uart_tx_data <= (others => '0');
-                        uart_tx_start <= '0';
-                end case;
-            end if;
-        end if;
-    end process;
-
-    reprogram_address <= std_logic_vector(to_unsigned(reprogram_counter, reprogram_address'length));
+    reprogrammer : entity work.reprogrammer
+    port map(
+        clk => CLOCK_50_B6A,
+        rst_n => CPU_RESET_n,
+        uart_rx_data       => uart_rx_data,
+        uart_rx_data_ready => uart_rx_data_ready,
+        uart_tx_data       => uart_tx_data,
+        uart_tx_start      => uart_tx_start,
+        reprogram_enable   => reprogram_enable,
+        reprogram_data     => reprogram_data,
+        reprogram_clk      => reprogram_clk,
+        reprogram_address  => reprogram_address
+    );
 
     LEDR(8) <= reprogram_enable;
 
